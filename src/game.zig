@@ -64,6 +64,16 @@ pub fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 pub fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
+    try errors.errify(c.SDL_SetRenderScale(renderer, 2, 2));
+    {
+        const gary = "Gary Ascuy was HERE !!!";
+        try errors.errify(c.SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff));
+        try errors.errify(c.SDL_RenderDebugText(renderer, 100, 100, gary.ptr));
+    }
+
+    try errors.errify(c.SDL_SetRenderScale(renderer, 1, 1));
+    try errors.errify(c.SDL_RenderPresent(renderer));
+
     return c.SDL_APP_CONTINUE;
 }
 
