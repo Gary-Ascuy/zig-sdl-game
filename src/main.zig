@@ -1,6 +1,7 @@
 // Imports
 const std = @import("std");
 const lib = @import("zig_sdl_game_lib");
+const e = @import("error.zig");
 
 const c = @cImport({
     @cDefine("SDL_DISABLE_OLD_NAMES", {});
@@ -13,6 +14,7 @@ const c = @cImport({
 // Variables
 const sdl_log = std.log.scoped(.sdl);
 const app_log = std.log.scoped(.app);
+var app_err: e.ErrorStore = .{};
 
 var fully_initialized = false;
 
@@ -33,16 +35,16 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         c.SDL_MICRO_VERSION,
     });
 
-    try errify(c.SDL_Init(c.SDL_INIT_VIDEO));
+    try e.errify(c.SDL_Init(c.SDL_INIT_VIDEO));
     sdl_log.debug("SDL video drivers: {}", .{fmtSdlDrivers(
         c.SDL_GetCurrentVideoDriver().?,
         c.SDL_GetNumVideoDrivers(),
         c.SDL_GetVideoDriver,
     )});
 
-    errify(c.SDL_SetHint(c.SDL_HINT_RENDER_VSYNC, "1")) catch {};
+    e.errify(c.SDL_SetHint(c.SDL_HINT_RENDER_VSYNC, "1")) catch {};
 
-    try errify(c.SDL_CreateWindowAndRenderer("SDL - Gary Ascuy", window_w, window_h, 0, @ptrCast(&window), @ptrCast(&renderer)));
+    try e.errify(c.SDL_CreateWindowAndRenderer("SDL - Gary Ascuy", window_w, window_h, 0, @ptrCast(&window), @ptrCast(&renderer)));
     errdefer c.SDL_DestroyWindow(window);
     errdefer c.SDL_DestroyRenderer(renderer);
 
@@ -126,26 +128,6 @@ fn formatSdlDrivers(
     }
 }
 
-inline fn errify(value: anytype) error{SdlError}!switch (@typeInfo(@TypeOf(value))) {
-    .bool => void,
-    .pointer, .optional => @TypeOf(value.?),
-    .int => |info| switch (info.signedness) {
-        .signed => @TypeOf(@max(0, value)),
-        .unsigned => @TypeOf(value),
-    },
-    else => @compileError("unerrifiable type: " ++ @typeName(@TypeOf(value))),
-} {
-    return switch (@typeInfo(@TypeOf(value))) {
-        .bool => if (!value) error.SdlError,
-        .pointer, .optional => value orelse error.SdlError,
-        .int => |info| switch (info.signedness) {
-            .signed => if (value >= 0) @max(0, value) else error.SdlError,
-            .unsigned => if (value != 0) value else error.SdlError,
-        },
-        else => comptime unreachable,
-    };
-}
-
 // Entry point
 pub fn main() !u8 {
     app_err.reset();
@@ -154,62 +136,22 @@ pub fn main() !u8 {
     return app_err.load() orelse status;
 }
 
-fn sdlMainC(argc: c_int, argv: ?[*:null]?[*:0]u8) callconv(.c) c_int {
+pub fn sdlMainC(argc: c_int, argv: ?[*:null]?[*:0]u8) callconv(.c) c_int {
     return c.SDL_EnterAppMainCallbacks(argc, @ptrCast(argv), sdlAppInitC, sdlAppIterateC, sdlAppEventC, sdlAppQuitC);
 }
 
-fn sdlAppInitC(appstate: ?*?*anyopaque, argc: c_int, argv: ?[*:null]?[*:0]u8) callconv(.c) c.SDL_AppResult {
+pub fn sdlAppInitC(appstate: ?*?*anyopaque, argc: c_int, argv: ?[*:null]?[*:0]u8) callconv(.c) c.SDL_AppResult {
     return sdlAppInit(appstate.?, @ptrCast(argv.?[0..@intCast(argc)])) catch |err| app_err.store(err);
 }
 
-fn sdlAppIterateC(appstate: ?*anyopaque) callconv(.c) c.SDL_AppResult {
+pub fn sdlAppIterateC(appstate: ?*anyopaque) callconv(.c) c.SDL_AppResult {
     return sdlAppIterate(appstate) catch |err| app_err.store(err);
 }
 
-fn sdlAppEventC(appstate: ?*anyopaque, event: ?*c.SDL_Event) callconv(.c) c.SDL_AppResult {
+pub fn sdlAppEventC(appstate: ?*anyopaque, event: ?*c.SDL_Event) callconv(.c) c.SDL_AppResult {
     return sdlAppEvent(appstate, event.?) catch |err| app_err.store(err);
 }
 
-fn sdlAppQuitC(appstate: ?*anyopaque, result: c.SDL_AppResult) callconv(.c) void {
+pub fn sdlAppQuitC(appstate: ?*anyopaque, result: c.SDL_AppResult) callconv(.c) void {
     sdlAppQuit(appstate, app_err.load() orelse result);
 }
-
-var app_err: ErrorStore = .{};
-
-const ErrorStore = struct {
-    const status_not_stored = 0;
-    const status_storing = 1;
-    const status_stored = 2;
-
-    status: c.SDL_AtomicInt = .{},
-    err: anyerror = undefined,
-    trace_index: usize = undefined,
-    trace_addrs: [32]usize = undefined,
-
-    fn reset(es: *ErrorStore) void {
-        _ = c.SDL_SetAtomicInt(&es.status, status_not_stored);
-    }
-
-    fn store(es: *ErrorStore, err: anyerror) c.SDL_AppResult {
-        if (c.SDL_CompareAndSwapAtomicInt(&es.status, status_not_stored, status_storing)) {
-            es.err = err;
-            if (@errorReturnTrace()) |src_trace| {
-                es.trace_index = src_trace.index;
-                const len = @min(es.trace_addrs.len, src_trace.instruction_addresses.len);
-                @memcpy(es.trace_addrs[0..len], src_trace.instruction_addresses[0..len]);
-            }
-            _ = c.SDL_SetAtomicInt(&es.status, status_stored);
-        }
-        return c.SDL_APP_FAILURE;
-    }
-
-    fn load(es: *ErrorStore) ?anyerror {
-        if (c.SDL_GetAtomicInt(&es.status) != status_stored) return null;
-        if (@errorReturnTrace()) |dst_trace| {
-            dst_trace.index = es.trace_index;
-            const len = @min(dst_trace.instruction_addresses.len, es.trace_addrs.len);
-            @memcpy(dst_trace.instruction_addresses[0..len], es.trace_addrs[0..len]);
-        }
-        return es.err;
-    }
-};
