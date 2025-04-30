@@ -2,7 +2,7 @@
     .name = .zig_sdl_game,
     .version = "0.0.0",
 
-    .fingerprint = 0x9add11c775cd8a21, // Changing this has security and trust implications.
+    .fingerprint = 0x9add11c775cd8a21,
     .minimum_zig_version = "0.14.0",
 
     .dependencies = .{
