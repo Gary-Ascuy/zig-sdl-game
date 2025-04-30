@@ -24,6 +24,7 @@ const window_h = 480;
 
 var window: *c.SDL_Window = undefined;
 var renderer: *c.SDL_Renderer = undefined;
+var position: f32 = 1;
 
 // Methods
 pub fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
@@ -61,14 +62,26 @@ pub fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     return c.SDL_APP_CONTINUE;
 }
 
+pub fn getPositionY(base: f32) f32 {
+    if (position > 360) {
+        position = 0;
+    }
+    position = position + 0.05;
+
+    return base + @sin(position) * 50;
+}
+
 pub fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
+    try errors.errify(c.SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xff));
+    try errors.errify(c.SDL_RenderClear(renderer));
+
     try errors.errify(c.SDL_SetRenderScale(renderer, 2, 2));
     {
-        const gary = "Gary Ascuy was HERE !!!";
-        try errors.errify(c.SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff));
-        try errors.errify(c.SDL_RenderDebugText(renderer, 100, 100, gary.ptr));
+        const message = "Gary Ascuy was HERE !!!";
+        try errors.errify(c.SDL_SetRenderDrawColor(renderer, 0x2d, 0x7e, 0xcf, 0xff));
+        try errors.errify(c.SDL_RenderDebugText(renderer, 70, getPositionY(100), message.ptr));
     }
 
     try errors.errify(c.SDL_SetRenderScale(renderer, 1, 1));
