@@ -11,8 +11,6 @@ const c = @cImport({
 });
 
 // Variables
-pub const std_options: std.Options = .{ .log_level = .debug };
-
 const sdl_log = std.log.scoped(.sdl);
 const app_log = std.log.scoped(.app);
 
@@ -20,6 +18,7 @@ var fully_initialized = false;
 
 const window_w = 640;
 const window_h = 480;
+
 var window: *c.SDL_Window = undefined;
 var renderer: *c.SDL_Renderer = undefined;
 
